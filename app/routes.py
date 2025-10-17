@@ -2,9 +2,21 @@ from app import app, db
 from app.models import User, Post, Comment
 from flask import jsonify, render_template, redirect, url_for, request, send_file
 from flask_login import current_user, login_user, logout_user, login_required
+from flask_cors import CORS
 import os
 from werkzeug.utils import secure_filename
 
+
+CORS(app, 
+     origins=[
+            "http://localhost:3000",
+            "http://localhost:5500",
+            "https://*.vercel.app",
+            "https://*.netlify.app"
+        ],
+     supports_credentials=True,
+     allow_headers=["Content-Type", "Authorization"],
+     methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
 
 UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'pdf', 'doc', 'docx'}
@@ -25,7 +37,7 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-@app.route('/register', methods=["POST"])
+@app.route('/api/register', methods=["POST"])
 def register():
     """Register a new user"""
     data = request.get_json()
@@ -46,14 +58,22 @@ def register():
     user.set_password(password)
     db.session.add(user)
     db.session.commit()
-    return jsonify({"message": "User created successfully"}), 201
+    return jsonify({"message": "User created successfully", "user_id": user.id}), 201
 
 
-@app.route('/login', methods=["POST"])
+@app.route('/api/login', methods=["POST"])
 def login():
     """Login user"""
     if current_user.is_authenticated:
-        return jsonify({"message": "You are already logged in"}), 200
+        return jsonify({
+            "message": "You are already logged in",
+            "user": {
+                "id": current_user.id,
+                "username": current_user.username,
+                "email": current_user.email,
+                "name": current_user.name
+            }
+        }), 200
         
     data = request.get_json()
     check_data(data)
@@ -66,17 +86,21 @@ def login():
 
     user = User.query.filter_by(email=email).first()
     if user and user.verify_password(password):
-        login_user(user)
-        
-        next_page = request.args.get('next')
-        if next_page:
-            return redirect(url_for(next_page))
-        return jsonify({"message": "Login successful", "user_id": user.id}), 200
+        login_user(user, remember=True)
+        return jsonify({
+            "message": "Login successful",
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "name": user.name
+            }
+        }), 200
     
     return jsonify({'error': 'Invalid credentials'}), 401
 
 
-@app.route('/logout', methods=["POST"])
+@app.route('/api/logout', methods=["POST"])
 @login_required
 def logout():
     """Logout user"""
@@ -84,7 +108,19 @@ def logout():
     return jsonify({'message': 'Logged out successfully'}), 200
 
 
-@app.route('/profile')
+@app.route('/api/me', methods=['GET'])
+@login_required
+def get_current_user():
+    """Get current logged-in user"""
+    return jsonify({
+        'id': current_user.id,
+        'username': current_user.username,
+        'email': current_user.email,
+        'name': current_user.name
+    }), 200
+
+
+@app.route('/api/profile', methods=['GET'])
 @login_required
 def profile():
     """Get current user profile"""
@@ -100,7 +136,7 @@ def profile():
     )
 
 
-@app.route('/posts', methods=['POST'])
+@app.route('/api/posts', methods=['POST'])
 @login_required
 def create_post():
     """Create a new post"""
@@ -133,12 +169,17 @@ def create_post():
             'title': post.title,
             'content': post.content,
             'file_path': post.file_path,
-            'user_id': post.user_id
+            'user_id': post.user_id,
+            'author': {
+                'id': post.author.id, # type: ignore
+                'username': post.author.username, # type: ignore
+                'name': post.author.name # type: ignore
+            }
         }
     }), 201
 
 
-@app.route('/posts/<int:post_id>', methods=['GET'])
+@app.route('/api/posts/<int:post_id>', methods=['GET'])
 def get_post(post_id):
     """Get a specific post with all its comments"""
     post = Post.query.get(post_id)
@@ -176,7 +217,7 @@ def get_post(post_id):
     }), 200
 
 
-@app.route('/posts', methods=['GET'])
+@app.route('/api/posts', methods=['GET'])
 def get_all_posts():
     """Get all posts"""
     posts = Post.query.all()
@@ -189,13 +230,17 @@ def get_all_posts():
                 'content': post.content,
                 'file_path': post.file_path,
                 'user_id': post.user_id,
-                'author': post.author.username
+                'author': {
+                    'id': post.author.id,
+                    'username': post.author.username,
+                    'name': post.author.name
+                }
             } for post in posts
         ]
     }), 200
 
 
-@app.route('/posts/<int:post_id>/edit', methods=['PUT', 'PATCH'])
+@app.route('/api/posts/<int:post_id>/edit', methods=['PUT', 'PATCH'])
 @login_required
 def edit_post(post_id):
     """Edit/Update a post"""
@@ -270,7 +315,7 @@ def edit_post(post_id):
     }), 200
 
 
-@app.route('/posts/<int:post_id>', methods=['DELETE'])
+@app.route('/api/posts/<int:post_id>', methods=['DELETE'])
 @login_required
 def delete_post(post_id):
     """Delete a post"""
@@ -296,7 +341,7 @@ def delete_post(post_id):
     return jsonify({'message': 'Post deleted successfully'}), 200
 
 
-@app.route('/posts/<int:post_id>/comments', methods=['POST'])
+@app.route('/api/posts/<int:post_id>/comments', methods=['POST'])
 @login_required
 def add_comment(post_id):
     """Add a comment to a post"""
@@ -322,6 +367,57 @@ def add_comment(post_id):
             'id': comment.id,
             'text': comment.text,
             'user_id': comment.user_id,
-            'post_id': comment.post_id
+            'post_id': comment.post_id,
+            'commenter': {
+                'id': current_user.id,
+                'username': current_user.username,
+                'name': current_user.name
+            }
         }
     }), 201
+
+
+@app.route('/api/posts/<int:post_id>/download', methods=['GET'])
+def download_file(post_id):
+    """Download file attached to a post"""
+    post = Post.query.get(post_id)
+    
+    if not post:
+        return jsonify({'error': 'Post not found'}), 404
+    
+    if not post.file_path:
+        return jsonify({'error': 'No file attached to this post'}), 404
+    
+    if not os.path.exists(post.file_path):
+        return jsonify({'error': 'File not found on server'}), 404
+    
+    # Extract original filename (remove user_id prefix)
+    filename = os.path.basename(post.file_path)
+    if '_' in filename:
+        # Remove the user_id prefix (e.g., "1_document.pdf" -> "document.pdf")
+        original_filename = '_'.join(filename.split('_')[1:])
+    else:
+        original_filename = filename
+    
+    return send_file(
+        post.file_path,
+        as_attachment=True,
+        download_name=original_filename
+    )
+
+
+# Error handlers for better JSON responses
+@app.errorhandler(401)
+def unauthorized(error):
+    return jsonify({'error': 'Unauthorized access. Please login.'}), 401
+
+
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({'error': 'Resource not found'}), 404
+
+
+@app.errorhandler(500)
+def internal_error(error):
+    db.session.rollback()
+    return jsonify({'error': 'Internal server error'}), 500
