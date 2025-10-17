@@ -1,0 +1,32 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+*.cache
+
+# Virtual environments
+.venv
+
+*.db
+
+# Environment files
+.env
+.venv/
+venv/
+
+# IDE files
+.vscode/
+.idea/
+
+# Flask-Migrate files
+migrations/
+instance/
+
+# Uploaded files
+uploads/
+
+# Logs
+*.log
