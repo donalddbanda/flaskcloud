@@ -1,6 +1,6 @@
 from app import app, db
 from app.models import User, Post, Comment
-from flask import jsonify, render_template, redirect, url_for, request
+from flask import jsonify, render_template, redirect, url_for, request, send_file
 from flask_login import current_user, login_user, logout_user, login_required
 import os
 from werkzeug.utils import secure_filename
